@@ -1,0 +1,49 @@
+{
+  "name": "@reidar80/webshelf-mcp",
+  "version": "0.2.0",
+  "description": "Model Context Protocol server for Webshelf — list, read, upload and manage HTML and markdown files hosted on webshelf.app from any MCP-aware client.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "webshelf",
+    "claude",
+    "ai"
+  ],
+  "homepage": "https://webshelf.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reidar80/webshelf-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/reidar80/webshelf-mcp/issues"
+  },
+  "license": "MIT",
+  "author": "Webshelf",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "webshelf-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

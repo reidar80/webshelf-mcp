@@ -1,0 +1,93 @@
+name: publish
+
+# Publishes @reidar80/webshelf-mcp to npm.
+#
+# Triggers:
+#   • Every push to main. The job inspects package.json and only
+#     publishes when the version isn't already on the registry — every
+#     other run is a no-op, so it's safe to push without bumping the
+#     version.
+#   • workflow_dispatch, so a maintainer can re-trigger after bumping
+#     the version manually.
+#
+# Requirements:
+#   • Repository secret NPM_TOKEN with publish rights on the @reidar80
+#     npm org (https://www.npmjs.com/settings/reidar80/). The current
+#     token expires 2026-07-14 (60 days from 2026-05-15, minus 10
+#     minutes); rotate before then or the publish step starts failing.
+#   • Node 20+ matching the package's `engines.node` floor.
+#
+# Safety:
+#   • Branch guard: refuses to run on anything other than main, so a
+#     workflow_dispatch from a feature branch can't ship to npm.
+#   • npm provenance is intentionally NOT enabled while the source
+#     repo is private — sigstore refuses to mint an attestation
+#     pointing at a private GitHub source repo. Re-enable
+#     `--provenance` (and the `id-token: write` permission below) if
+#     the repo ever flips to public; the tarball will then carry an
+#     attestation tying it to this workflow + commit.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # `id-token: write` is intentionally omitted — only needed for npm
+  # provenance (`--provenance`), which sigstore refuses to mint for a
+  # private GitHub source repo. Add it back here when the repo goes
+  # public and provenance is re-enabled in the publish step.
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Check published version
+        id: check
+        run: |
+          set -euo pipefail
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          echo "version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+          # `npm view` errors on a brand-new package — treat that as
+          # "needs publishing".
+          PUBLISHED=$(npm view @reidar80/webshelf-mcp@"$PKG_VERSION" version 2>/dev/null || echo "")
+          if [ -n "$PUBLISHED" ]; then
+            echo "needs_publish=false" >> "$GITHUB_OUTPUT"
+            echo "Version $PKG_VERSION already on npm; nothing to do."
+          else
+            echo "needs_publish=true" >> "$GITHUB_OUTPUT"
+            echo "Version $PKG_VERSION not yet on npm; will publish."
+          fi
+
+      - name: Publish
+        if: steps.check.outputs.needs_publish == 'true'
+        # `--provenance` is intentionally omitted while this repo is
+        # private; see the header comment for the rationale.
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
