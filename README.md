@@ -103,6 +103,20 @@ OAuth 2.0 device-authorization grant (RFC 8628):
    in `~/.webshelf/credentials.json` (mode 0600). The pending file is
    removed.
 
+### Authorize from the command line
+
+If you'd rather authorize before configuring your MCP client, run
+
+```
+npx -y @reidar80/webshelf-mcp auth
+```
+
+(or just `npx -y @reidar80/webshelf-mcp` from an interactive terminal —
+the binary detects a TTY and falls through to the same flow). It will
+print the verification URL, sit and poll, and exit with "Authorization
+complete. Token stored." once you approve. The credentials it writes
+are what your MCP client picks up automatically on next launch.
+
 This fast-fail design — surface the URL to the user instead of polling
 for the device-code TTL — avoids the four-minute timeouts MCP hosts
 enforce when a server doesn't respond to a tool call. If approval
