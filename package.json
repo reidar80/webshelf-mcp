@@ -1,6 +1,6 @@
 {
   "name": "@reidar80/webshelf-mcp",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Model Context Protocol server for Webshelf — list, read, upload and manage HTML and markdown files hosted on webshelf.app from any MCP-aware client.",
   "keywords": [
     "mcp",
