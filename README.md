@@ -87,16 +87,27 @@ at `npx -y @reidar80/webshelf-mcp`.
 
 ## How auth works
 
-On first launch the server runs the OAuth 2.0 device-authorization
-grant (RFC 8628):
+On the first tool call without saved credentials the server runs the
+OAuth 2.0 device-authorization grant (RFC 8628):
 
-1. It calls `POST /api/oauth/device` to get a one-time `user_code`.
-2. It prints the verification URL + code to stderr.
+1. It calls `POST /api/oauth/device` to get a one-time `user_code` and
+   writes the pending state to `~/.webshelf/credentials.pending.json`.
+2. The first tool call returns an error message containing the
+   verification URL + code — your MCP client (Claude Desktop, Claude
+   Code, etc.) shows it to you verbatim. The same prompt is mirrored
+   to stderr for log-tailing setups.
 3. You open the URL in your browser, sign in to Webshelf, and approve
    the connection.
-4. The server polls `POST /api/oauth/token` until the approval comes
-   through, then caches the resulting `access_token` + `refresh_token`
-   in `~/.webshelf/credentials.json` (mode 0600).
+4. Retry any tool call. The server exchanges the pending device_code
+   for tokens in one shot and caches `access_token` + `refresh_token`
+   in `~/.webshelf/credentials.json` (mode 0600). The pending file is
+   removed.
+
+This fast-fail design — surface the URL to the user instead of polling
+for the device-code TTL — avoids the four-minute timeouts MCP hosts
+enforce when a server doesn't respond to a tool call. If approval
+takes a while, every subsequent tool call before approval gets the
+same "still pending" error with the URL.
 
 The access token has a 1-hour TTL and refreshes automatically. To
 revoke a session, visit **Settings → API sessions** on webshelf.app and
