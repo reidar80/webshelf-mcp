@@ -71,22 +71,57 @@ it through a real MCP client against a staging Webshelf instance.
 
 ## Auth flow
 
-1. First launch: no `~/.webshelf/credentials.json` → `ensureCredentials`
-   runs `runDeviceFlow`, which `POST`s to `/api/oauth/device`, prints
-   the verification URL + `user_code` to stderr, then polls
-   `/api/oauth/token` until approval (or denial / expiry).
-2. Successful approval persists `accessToken`, `refreshToken`,
-   `accessExpiresAtMs`, `refreshExpiresAtMs`, and `baseUrl` to the
-   credentials file with mode 0600.
-3. Every `request()` in `api.ts` checks expiry; within 60s of expiry it
-   calls `refreshAccessToken`. On 401 it forces a refresh and retries
-   once. Refresh tokens are single-use and rotated on every exchange.
-4. Revocation happens server-side at `/app/settings/tokens`; the next
-   refresh will fail and the user is told to re-run the device flow.
+The device flow is **fast-fail**: when credentials are missing, the
+first tool call does NOT block on RFC 8628's polling loop. Instead the
+server stores the pending `device_code` to disk, throws
+`DeviceFlowPendingError` with the verification URL embedded, and the
+MCP client surfaces that error message to the user. The user approves
+in their browser; the next tool call exchanges the stored device_code
+for tokens in one shot. This avoids the 4-minute "server unresponsive"
+timeouts that MCP hosts (Claude Desktop, Claude Code) impose, because
+no tool call ever sits awaiting an unbounded device-flow poll.
 
-`baseUrl` is captured in the credentials file so switching
-`WEBSHELF_BASE_URL` (e.g. between prod and staging) triggers a fresh
-device flow instead of replaying tokens against the wrong host.
+Files involved (default location, override via
+`WEBSHELF_CREDENTIALS_FILE`):
+
+- `~/.webshelf/credentials.json` — live `accessToken` + `refreshToken`
+  + their expiries + the `baseUrl` they belong to. Mode 0600.
+- `~/.webshelf/credentials.pending.json` — same dir, suffix
+  `.pending.json` — a pending device flow that's waiting for browser
+  approval. Includes `deviceCode`, the verification URLs, the user
+  code, and `expiresAtMs`. Removed once tokens are issued, or when a
+  poll attempt finds the code expired/denied and the flow restarts.
+
+Step-by-step:
+
+1. **First tool call, no credentials**: `ensureCredentials` calls
+   `startDeviceFlow` (one POST to `/api/oauth/device`), writes the
+   pending file, mirrors the URL to stderr, and throws
+   `DeviceFlowPendingError` carrying the verification URL. The MCP
+   server wrapper turns the error into a friendly tool-result message
+   that the user sees in their MCP client.
+2. **User approves in browser** at the URL.
+3. **Second tool call**: `ensureCredentials` finds the pending file,
+   calls `tryRedeemDeviceCode` (single POST), gets the token pair,
+   writes `credentials.json`, deletes the pending file, and proceeds
+   with the original API call. Subsequent tool calls in the same
+   session reuse the in-memory credentials.
+4. **Within 60s of access-token expiry** or on a 401 response,
+   `refreshAccessToken` rotates the pair against
+   `/api/oauth/token?grant_type=refresh_token`. Failure throws so the
+   user is told to re-run the device flow (delete the credentials
+   file and retry).
+
+`baseUrl` is captured in both files so switching `WEBSHELF_BASE_URL`
+(e.g. between prod and staging) triggers a fresh device flow instead
+of replaying tokens against the wrong host.
+
+Server-side, every token issuance and refresh emits both an audit row
+(`api.token_issued` / `api.token_refreshed`) with the request IP/UA in
+`metadata` AND a `sign_in_log` row tagged
+`provider="api:device:<clientName>"` /
+`provider="api:refresh:<clientName>"`. That's the cheapest tripwire
+the platform has for leaked refresh tokens being used from new IPs.
 
 ## Environment variables
 

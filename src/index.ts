@@ -240,7 +240,7 @@ const tools = [
 const server = new Server(
   {
     name: "@reidar80/webshelf-mcp",
-    version: "0.2.0",
+    version: "0.2.2",
   },
   {
     capabilities: {
@@ -293,7 +293,63 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+async function runCliAuthFlow(): Promise<void> {
+  // Manual / interactive authorization: kick off a device flow, print
+  // the verification URL to stdout, and poll until the user approves
+  // (or the device_code expires). Reuses the same `ensureCredentials`
+  // surface as the stdio handlers, but in a loop so the CLI can sit
+  // and wait — the 4-minute MCP-host timeout doesn't apply here.
+  const { ensureCredentials, DeviceFlowPendingError } = await import(
+    "./auth.js"
+  );
+
+  process.stdout.write("\n┌─ Webshelf authorization ──────────────────\n");
+  // Each iteration: ensureCredentials either returns creds (done) or
+  // throws DeviceFlowPendingError (still waiting). We poll every 3s.
+  const pollIntervalMs = 3000;
+  // RFC 8628 device-code TTL ceiling; we'll give up earlier if the
+  // server signals expiry via ensureCredentials throwing a non-pending
+  // error and re-starting the flow.
+  const deadline = Date.now() + 11 * 60 * 1000;
+  let lastPrinted: string | null = null;
+  while (Date.now() < deadline) {
+    try {
+      await ensureCredentials(BASE_URL, CLIENT_NAME);
+      process.stdout.write(
+        "│ Authorization complete. Token stored.\n└────────────────────────────────────────\n",
+      );
+      return;
+    } catch (err) {
+      if (err instanceof DeviceFlowPendingError) {
+        if (lastPrinted !== err.verificationUriComplete) {
+          process.stdout.write(`│ Open this URL in your browser:\n`);
+          process.stdout.write(`│   ${err.verificationUriComplete}\n`);
+          process.stdout.write(`│ Or visit ${err.verificationUri}\n`);
+          process.stdout.write(`│ and enter code ${err.userCode}\n│\n`);
+          process.stdout.write(`│ Waiting for approval…\n`);
+          lastPrinted = err.verificationUriComplete;
+        }
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("device code expired before user approval");
+}
+
 async function main() {
+  // If a human is at the terminal (no MCP host piping stdio) and the
+  // first positional arg is `auth`, or stdin is a TTY without args at
+  // all, run the device flow eagerly so they can authorize from the
+  // command line. Otherwise speak stdio MCP as normal.
+  const arg = process.argv[2];
+  const interactive =
+    arg === "auth" || (!arg && process.stdin.isTTY === true);
+  if (interactive) {
+    await runCliAuthFlow();
+    return;
+  }
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

@@ -4,6 +4,12 @@
  * Owns the auth lifecycle: pulls credentials from auth.ts, attaches the
  * Bearer header, refreshes on 401, retries once. Beyond that, the wire
  * format matches the OpenAPI spec exactly — no client-side renaming.
+ *
+ * Credentials are resolved lazily — on the first request, not at module
+ * load — so that a missing or pending device flow surfaces as a tool
+ * error (DeviceFlowPendingError carries the URL the user must visit),
+ * never as a four-minute hang while the MCP host waits for the stdio
+ * server to respond.
  */
 
 import { ensureCredentials, forceRefresh } from "./auth.js";
@@ -68,15 +74,16 @@ export function createApiClient(options: {
   baseUrl: string;
   clientName: string;
 }): ApiClient {
-  let credsPromise = ensureCredentials(options.baseUrl, options.clientName);
-
   async function request<T>(
     method: string,
     path: string,
     body?: unknown,
     headers: Record<string, string> = {},
   ): Promise<T> {
-    let creds = await credsPromise;
+    // Lazy — only kicks the device flow when a tool actually needs the
+    // API. Missing/pending credentials surface as DeviceFlowPendingError
+    // (handled by the MCP server wrapper), not a hung Promise.
+    let creds = await ensureCredentials(options.baseUrl, options.clientName);
     let res = await fetch(`${creds.baseUrl}${path}`, {
       method,
       headers: {
@@ -90,7 +97,6 @@ export function createApiClient(options: {
     if (res.status === 401) {
       // Stale access token; refresh and retry once.
       creds = await forceRefresh(creds);
-      credsPromise = Promise.resolve(creds);
       res = await fetch(`${creds.baseUrl}${path}`, {
         method,
         headers: {
