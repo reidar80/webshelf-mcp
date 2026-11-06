@@ -42,7 +42,10 @@ src/
                 Defines webshelf_whoami, webshelf_list_collections,
                 webshelf_list_files, webshelf_get_file,
                 webshelf_read_file, webshelf_create_file,
-                webshelf_update_file, webshelf_delete_file.
+                webshelf_update_file, webshelf_delete_file,
+                webshelf_storage_guide. create/update accept
+                storageEnabled. The server also sends MCP
+                `instructions` pointing assistants at the guide.
                 Each tool has an inputSchema (JSON Schema for the MCP
                 client) AND a zod parser (defence in depth at the
                 handler boundary).
@@ -68,6 +71,15 @@ package.json    bin: webshelf-mcp → dist/index.js. Only dist/ + README
 There is **no test suite yet**. Type correctness + the upstream API
 contract are the safety net. If you change a tool's behaviour, exercise
 it through a real MCP client against a staging Webshelf instance.
+
+## Storage guide
+
+`webshelf_storage_guide` fetches `GET /api/v1/guides/storage`
+(`text/markdown`) from the Webshelf server instead of embedding the text.
+The source of truth is `lib/storage-guide.ts` in `reidar80/webshelf`, and
+the HTTP MCP transport (`/api/mcp`, used by Claude.ai / ChatGPT
+connectors) returns the same text. Don't copy the guide into this repo:
+the limits in it come from the server's live config.
 
 ## Auth flow
 
