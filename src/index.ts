@@ -19,8 +19,9 @@
  *   webshelf_get_file       — metadata for a single file
  *   webshelf_read_file      — fetch file contents (HTML or markdown)
  *   webshelf_create_file    — upload a new HTML or markdown file
- *   webshelf_update_file    — rename / move / re-describe
+ *   webshelf_update_file    — rename / move / re-describe / toggle storage
  *   webshelf_delete_file    — soft-delete a file (recycle bin)
+ *   webshelf_storage_guide  — how to adapt HTML to window.webshelf.storage
  */
 
 import { hostname } from "node:os";
@@ -154,7 +155,7 @@ const tools = [
   {
     name: "webshelf_create_file",
     description:
-      "Upload a new file. `format` may be \"html\" (default) or \"markdown\"; pass the bytes in `content`. Set collectionId to a uuid to place inside a collection (caller must be owner/manager), or null for a standalone personal file. Returns the created file's metadata.",
+      "Upload a new file. `format` may be \"html\" (default) or \"markdown\"; pass the bytes in `content`. Set collectionId to a uuid to place inside a collection (caller must be owner/manager), or null for a standalone personal file. For an HTML file whose JavaScript should save data between visits or share it between viewers, set `storageEnabled: true` and call `webshelf_storage_guide` first for how to adapt the HTML. Returns the created file's metadata.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -169,6 +170,11 @@ const tools = [
         },
         format: { type: "string", enum: ["html", "markdown"] },
         content: { type: "string" },
+        storageEnabled: {
+          type: "boolean",
+          description:
+            "HTML only. Turns on the per-file key/value store (window.webshelf.storage). See webshelf_storage_guide.",
+        },
       },
     },
     handler: async (input: unknown) => {
@@ -182,18 +188,22 @@ const tools = [
             .optional(),
           format: z.enum(["html", "markdown"]).optional(),
           content: z.string().min(1),
+          storageEnabled: z.boolean().optional(),
         })
         .parse(input);
+      if (parsed.storageEnabled && parsed.format === "markdown") {
+        throw new Error("the persistence store is only available for HTML files");
+      }
       const { file } = await client.createFile(parsed);
       return text(
-        `Created ${file.format} file ${file.id} (${file.name}) — ${formatBytes(file.sizeBytes)}\n${BASE_URL}/app/files/${file.id}`,
+        `Created ${file.format} file ${file.id} (${file.name}) — ${formatBytes(file.sizeBytes)}${file.storageEnabled ? " — persistence store on" : ""}\n${BASE_URL}/app/files/${file.id}`,
       );
     },
   },
   {
     name: "webshelf_update_file",
     description:
-      "Rename, re-describe, or move a file. Pass only the fields you want to change.",
+      "Rename, re-describe, or move a file, or turn its persistence store on/off (`storageEnabled`, owner-only, HTML only). Pass only the fields you want to change.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -203,6 +213,11 @@ const tools = [
         name: { type: "string", minLength: 1, maxLength: 200 },
         description: { type: ["string", "null"], maxLength: 2000 },
         collectionId: { type: ["string", "null"], format: "uuid" },
+        storageEnabled: {
+          type: "boolean",
+          description:
+            "Owner-only, HTML only. Turns the per-file key/value store (window.webshelf.storage) on or off.",
+        },
       },
     },
     handler: async (input: unknown) => {
@@ -212,6 +227,7 @@ const tools = [
           name: z.string().min(1).max(200).optional(),
           description: z.string().max(2000).nullable().optional(),
           collectionId: z.string().uuid().nullable().optional(),
+          storageEnabled: z.boolean().optional(),
         })
         .parse(input);
       const { id, ...rest } = parsed;
@@ -235,17 +251,34 @@ const tools = [
       return text(`Moved ${id} to recycle bin.`);
     },
   },
+  {
+    name: "webshelf_storage_guide",
+    description:
+      "How to adapt an HTML artifact (e.g. one made in Claude or ChatGPT) to save data on Webshelf with window.webshelf.storage: the API, limits, sign-in rules, error handling, a drop-in adapter with a local fallback, and patterns for shared data. Read this before creating or updating an HTML file that should remember state or collect input from viewers.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {},
+    },
+    handler: async () => {
+      // Fetched from the server (GET /api/v1/guides/storage) so the text and
+      // the limits in it always match the Webshelf instance we talk to.
+      return text(await client.storageGuide());
+    },
+  },
 ] as const;
 
 const server = new Server(
   {
     name: "@reidar80/webshelf-mcp",
-    version: "0.2.2",
+    version: "0.3.0",
   },
   {
     capabilities: {
       tools: {},
     },
+    instructions:
+      "Webshelf MCP — read and write HTML / markdown files on Webshelf on behalf of the authenticated user. Before publishing an HTML artifact that should save state or collect input from viewers, call webshelf_storage_guide and create/update the file with storageEnabled: true.",
   },
 );
 

@@ -23,6 +23,8 @@ export interface ApiFile {
   protection: "public" | "authenticated" | "inherit" | "individual";
   format: "html" | "markdown";
   sizeBytes: number;
+  /** Per-file key/value store (window.webshelf.storage) on/off. HTML only. */
+  storageEnabled: boolean;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -57,6 +59,7 @@ export interface ApiClient {
     protection?: ApiFile["protection"];
     format?: ApiFile["format"];
     content: string;
+    storageEnabled?: boolean;
   }): Promise<{ file: ApiFile }>;
   updateFile(
     id: string,
@@ -64,10 +67,13 @@ export interface ApiClient {
       name?: string;
       description?: string | null;
       collectionId?: string | null;
+      storageEnabled?: boolean;
     },
   ): Promise<{ file: ApiFile }>;
   deleteFile(id: string): Promise<{ deleted: boolean }>;
   listCollections(): Promise<{ collections: ApiCollection[] }>;
+  /** Markdown guide for adapting HTML to window.webshelf.storage. */
+  storageGuide(): Promise<string>;
 }
 
 export function createApiClient(options: {
@@ -146,5 +152,7 @@ export function createApiClient(options: {
     updateFile: (id, input) => request("PATCH", `/api/v1/files/${id}`, input),
     deleteFile: (id) => request("DELETE", `/api/v1/files/${id}`),
     listCollections: () => request("GET", "/api/v1/collections"),
+    // Served as text/markdown, so request() returns the body as a string.
+    storageGuide: () => request<string>("GET", "/api/v1/guides/storage"),
   };
 }

@@ -81,9 +81,20 @@ at `npx -y @reidar80/webshelf-mcp`.
 | `webshelf_list_files` | List your files (or files in a collection). |
 | `webshelf_get_file` | Metadata for a single file. |
 | `webshelf_read_file` | Fetch the body of a file (HTML or markdown). |
-| `webshelf_create_file` | Upload a new HTML or markdown file. |
-| `webshelf_update_file` | Rename, re-describe, or move a file. |
+| `webshelf_create_file` | Upload a new HTML or markdown file. `storageEnabled: true` turns on the persistence store (HTML only). |
+| `webshelf_update_file` | Rename, re-describe, or move a file, or turn its persistence store on/off (owner-only). |
 | `webshelf_delete_file` | Move a file to the recycle bin. |
+| `webshelf_storage_guide` | How to adapt an HTML artifact to save data with `window.webshelf.storage`. |
+
+### Publishing artifacts that save data
+
+Ask your assistant to call `webshelf_storage_guide` before publishing an
+interactive page (a checklist, poll, retro board, saved draft). The guide
+comes from your Webshelf server, so its limits always match. It covers the
+`window.webshelf.storage` API, who can use it (signed-in viewers only), the
+error strings to handle, a drop-in adapter that falls back to local storage
+so the page still works in the assistant's own preview, and how to structure
+shared data. The assistant then creates the file with `storageEnabled: true`.
 
 ## How auth works
 
